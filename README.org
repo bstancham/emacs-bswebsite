@@ -1,0 +1,41 @@
+* Introduction
+BSWebsite is an emacs-based system for building static websites.
+
+This package contains the core website-building functionality. A highly flexible
+template system can be used to add customisation.
+
+Integrates with bsarchive as content management system for images.
+
+* Project Structure
+#+BEGIN_SRC text
++website-project-directory
+|
++--setup.el
+|
++--+templates
+|  +--+basic-template
+|     +--template.el
+|     +--style.css
+|
++--+src
+|  +--index.el
+|  +--page1.el
+|  +--page2.el
+|  +--page3.el
+|  +--+resrc
+|     +--image1.jpg
+|     +--image2.jpg
+|     +--image3.jpg
+|
++--+build
+#+END_SRC
+
+* Dependencies
+- emacs version 29 or higher
+- bsarchive.el
+- sqlite
+- exiftool
+- imagemagick
+
+* Jobs to Do
+** strip exif data from images - insert author/copyright notice
