@@ -1,17 +1,17 @@
 ;;;; THESE DEFINITIONS MAY BE OVERIDDEN BY SETUP FILE OR TEMPLATE ;;;;
 
-(setq bswebsite-project-dir nil)
+(setf bswebsite-project-dir nil)
 
 (setf bswebsite-stylesheet nil)
 
-(setq bswebsite-title "untitled")
+(setf bswebsite-title "untitled")
 
-(setq bswebsite-image-size-default 1000)
+(setf bswebsite-image-size-default 1000)
 
-(setq bswebsite-image-size-thumb 300)
+(setf bswebsite-image-size-thumb 300)
 
 ;; name of the file currently being processed
-(setq bswebsite-current-source-file nil)
+(setf bswebsite-current-source-file nil)
 
 (defun bswebsite-insert-page-header () nil)
 
@@ -67,11 +67,11 @@ Returns the url of the new image, relative to the project dir."
           ;; beginning of last line
           ;; (move-beginning-of-line 1)
           (move-end-of-line 0) ; end of previous line
-          (setq end-section (point))
+          (setf end-section (point))
           ;; beginning of next line after start
           (goto-char begin-section)
           (move-beginning-of-line 2)
-          (setq begin-section (point))
+          (setf begin-section (point))
           ;; return start and end point in a list
           (list begin-section end-section))
       nil)))
@@ -119,8 +119,8 @@ Returns the url of the new image, relative to the project dir."
                ((string-empty-p line)
                 (when (not (string-empty-p paragraph))
                   (push (bswebsite-make-insert-statement paragraph) body-statements))
-                (setq building-paragraph nil)
-                (setq paragraph ""))
+                (setf building-paragraph nil)
+                (setf paragraph ""))
 
                ;; s-expression
                ((string-match "^(" line)
@@ -132,8 +132,8 @@ Returns the url of the new image, relative to the project dir."
                
                ;; comment line
                ((string-match "^;" line)
-                (setq building-paragraph t)
-                (setq paragraph (concat paragraph
+                (setf building-paragraph t)
+                (setf paragraph (concat paragraph
                                         " "
                                         (bswebsite-strip-comment line))))))
 
@@ -163,13 +163,13 @@ Returns the url of the new image, relative to the project dir."
     (with-current-buffer (find-file-noselect page-src)
 
       ;; eval function definitions
-      (setq section (bswebsite-find-section "FUNCTIONS"))
+      (setf section (bswebsite-find-section "FUNCTIONS"))
       (when section
         (let ((begin-section (pop section))
               (end-section (pop section)))
           (eval-region begin-section end-section))))
 
-    (setq body-statements (bswebsite-get-body-statements page-src))
+    (setf body-statements (bswebsite-get-body-statements page-src))
 
     ;; build the page
     (make-empty-file page-build)
@@ -192,17 +192,35 @@ Returns the url of the new image, relative to the project dir."
     (setf bswebsite-stylesheet (file-name-concat template-dir "style.css"))
     (message "template stylesheet: %s" bswebsite-stylesheet)))
 
+(defun bswebsite-verify-dir (label dir)
+  "Return t if dir exists and is a directory, nil otherwise. Report results via
+message."
+  (if (file-exists-p dir)
+      (if (file-directory-p dir)
+          (progn (message "%s: %s" label dir)
+                 t)
+        (progn (message "ERROR, \"%s\" is not a directory: %s" label dir)
+               nil))
+    (progn (message "ERROR, \"%s\" does not exist: %s" label dir)
+           nil)))
+
+(defun bswebsite-verify-file (label file)
+  "Return t if file exists and is a file, nil otherwise. Report results via
+message."
+  (if (file-exists-p file)
+      (if (not (file-directory-p file))
+          (progn (message "%s: %s" label file)
+                 t)
+        (progn (message "ERROR, \"%s\" is a directory, not a file: %s" label file)
+               nil))
+    (progn (message "ERROR, \"%s\" does not exist: %s" label file)
+           nil)))
+
 (defun bswebsite-build-site (project-dir)
   "project-dir is the path to the website project directory."
   (interactive "DWebsite project dir: ")
   (setf bswebsite-project-dir project-dir)
-
-  ;; (message "project dir: %s\n" bswebsite-project-dir)
-  ;; (message "project dir is directory? %s\n" (file-directory-p bswebsite-project-dir))
-
-  (let* (
-         ;; (messages-buffer-name (file-name-concat project-dir "build-log"))
-         (src-dir (bswebsite-src-dir))
+  (let* ((src-dir (bswebsite-src-dir))
          (build-dir (bswebsite-build-dir))
          (src-resrc (file-name-concat src-dir "resrc"))
          (build-resrc (file-name-concat build-dir "resrc"))
@@ -211,41 +229,30 @@ Returns the url of the new image, relative to the project dir."
 
     (message "\nSTARTING WEBSITE BUILD AT %s" (current-time-string))
 
-    ;; (message "build-log: %s" messages-buffer-name)
-    
-    (message "source dir: %s" src-dir)
-    (message "build dir: %s" build-dir)
-    (message "resources dir (source): %s" src-resrc)
-    (message "resources dir (build): %s" build-resrc)
-    (message "setup file: %s" setup-file)
+    (when (and (bswebsite-verify-dir "project dir" bswebsite-project-dir)
+               (bswebsite-verify-dir "source dir" src-dir)
+               (bswebsite-verify-dir "resources dir" src-resrc)
+               (bswebsite-verify-file "setup file" setup-file))
 
-    (message "source dir exists? %s" (file-exists-p src-dir))
-    (message "build dir exists? %s" (file-exists-p build-dir))
-    (message "resources dir exists (source)? %s" (file-exists-p src-resrc))
-    (message "setup file exists? %s" (file-exists-p setup-file))
-
-    ;; let's get started...
-
-    ;; load setup first - setup script loads template
-    (when (file-exists-p setup-file)
+      ;; load setup first - setup script loads template
       (message "loading setup")
-      (load-file setup-file))
+      (load-file setup-file)
 
-    ;; delete build dir along with existing contents
-    (when (file-exists-p build-dir)
-      (message "deleting existing build-dir")
-      (delete-directory build-dir t))
-    ;; make new build dir
-    (make-directory build-dir)
-    (make-directory build-resrc)
+      ;; delete build dir along with existing contents
+      (when (file-exists-p build-dir)
+        (message "deleting existing build-dir")
+        (delete-directory build-dir t))
+      (message "making new build dir at: %s" build-dir)
+      (make-directory build-dir)
+      (make-directory build-resrc)
 
-    ;; copy stylesheet, if it exists
-    (if (file-exists-p bswebsite-stylesheet)
-        (copy-file bswebsite-stylesheet build-style)
-      (message "stylesheet does not exist: %s" bswebsite-stylesheet))
+      ;; copy stylesheet, if it exists
+      (if (file-exists-p bswebsite-stylesheet)
+          (copy-file bswebsite-stylesheet build-style)
+        (message "ERROR, stylesheet does not exist: %s" bswebsite-stylesheet))
 
-    ;; build pages (every file in src dir with .el extension)
-    (let ((src-files (directory-files src-dir nil "^[0-9a-zA-Z\\-\\_]+\\.el$")))
-      (while src-files
-        (bswebsite-build-page (pop src-files)))))
-  (message "WEBSITE BUILD FINISHED\n"))
+      ;; build pages (every file in src dir with .el extension)
+      (let ((src-files (directory-files src-dir nil "^[0-9a-zA-Z\\-\\_]+\\.el$")))
+        (while src-files
+          (bswebsite-build-page (pop src-files)))))
+    (message "WEBSITE BUILD FINISHED\n")))

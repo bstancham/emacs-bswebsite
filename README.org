@@ -39,3 +39,4 @@ Integrates with bsarchive as content management system for images.
 
 * Jobs to Do
 ** strip exif data from images - insert author/copyright notice
+** example project and basic template
