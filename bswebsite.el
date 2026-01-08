@@ -1,5 +1,8 @@
 ;;;; THESE DEFINITIONS MAY BE OVERIDDEN BY SETUP FILE OR TEMPLATE ;;;;
 
+;; path to archive database
+(setf bswebsite-archive-database-file nil)
+
 (setf bswebsite-project-dir nil)
 
 (setf bswebsite-stylesheet nil)
@@ -13,7 +16,51 @@
 ;; name of the file currently being processed
 (setf bswebsite-current-source-file nil)
 
+;; name of the function currently executing (for error tracking)
+(setf bswebsite-function-call-stack '())
+
 (defun bswebsite-insert-page-header () nil)
+
+;;;;;;;;;;;;;;;;;;;;; LOGGING AND ERROR TRACKING ;;;;;;;;;;;;;;;;;;;;;
+
+(setf bswebsite-build-report-buffer "*bswebsite-build-report*")
+
+(defun bswebsite-report-init ()
+  "Switches to the build-report buffer and deletes any existing content."
+  (switch-to-buffer-other-window bswebsite-build-report-buffer)
+  (delete-region (point-min) (point-max)))
+
+(defun bswebsite-report-append (str &rest format-args)
+  (save-excursion
+    (switch-to-buffer bswebsite-build-report-buffer)
+    (goto-char (point-max))
+    (insert (format (concat str "\n") format-args))))
+
+(setf bswebsite-build-errors '()) ; list of errors encountered during build
+
+(defun bswebsite-errors-init ()
+  "Clears the errors list"
+  (setf bswebsite-build-errors '()))
+
+(defun bswebsite-errors-add (str)
+  "Add a string to the errors list"
+  (push
+   (format "%s: %s" bswebsite-function-call-stack str)
+   bswebsite-build-errors))
+
+(defmacro bswebsite-with-error-handling (function-name info-str &rest body-statements)
+  "Executes contents wrapped inside an error handling block.
+If an error is encountered it is logged, including the info-string
+passed in as argument."
+  `(progn
+     (push ,function-name bswebsite-function-call-stack)
+     (condition-case err
+         (progn
+           ,@body-statements)
+       ;; catch any error
+       (error
+        (bswebsite-errors-add (format "%sERROR=%s" ,info-str err))))
+     (pop bswebsite-function-call-stack)))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;; WEBSITE BUILDER ;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
@@ -29,24 +76,35 @@
 (defun bswebsite-build-resrc-dir ()
   (file-name-concat bswebsite-project-dir "build" "resrc"))
 
+(defun bswebsite-get-image-source-url (image)
+  "Checks whether image is an archive UID, otherwise gets it from src/resrc."
+  ;; regex to match archive document UID in format "UID-___"
+  (if (string-match "UID-\\([0-9]+\\)" image)
+      (let ((uid (match-string 1 image)))
+        ;; get url from archive
+        (bsarchive-get-url-for-uid (string-to-number uid)))
+    ;; use the given url
+    (file-name-concat (bswebsite-src-dir) "resrc" image)))
+
 (defun bswebsite-resize-image (image-url max-dimension &optional filename-suffix)
   "Uses imagemagick to create a resized copy in the build-resrc dir. Optionally
 appends a string on to the the file name of the copy.
 
 Returns the url of the new image, relative to the project dir."
-  (let* ((src-url (file-name-concat (bswebsite-src-dir) image-url))
-         (relative-url (file-name-with-extension
-                        (file-name-concat
-                         (file-name-directory image-url)
-                         (concat (file-name-base image-url) filename-suffix))
-                        (file-name-extension image-url)))
-         (build-url (file-name-concat (bswebsite-build-dir) relative-url)))
+  (let ((relative-url "RELATIVE-URL-NOT-FOUND"))
+     (let ((src-url (bswebsite-get-image-source-url image-url)))
+       (setf relative-url (file-name-with-extension
+                           (file-name-concat "resrc"
+                                             (concat (file-name-base src-url) filename-suffix))
+                           (file-name-extension src-url)))
+       (let ((build-url (file-name-concat (bswebsite-build-dir) relative-url)))
 
-    (shell-command (format "convert %s -resize %sx%s %s"
-                           src-url
-                           max-dimension
-                           max-dimension
-                           build-url))
+         (shell-command (format "convert %s -resize %sx%s %s"
+                                src-url
+                                max-dimension
+                                max-dimension
+                                build-url))))
+
     ;; return relative url of new image
     relative-url))
 
@@ -65,7 +123,6 @@ Returns the url of the new image, relative to the project dir."
     (if (and begin-section end-section)
         (progn
           ;; beginning of last line
-          ;; (move-beginning-of-line 1)
           (move-end-of-line 0) ; end of previous line
           (setf end-section (point))
           ;; beginning of next line after start
@@ -88,10 +145,12 @@ Returns the url of the new image, relative to the project dir."
     (string-trim (substring line begin end))))
 
 (defun bswebsite-make-insert-statement (text)
+  "Makes an elisp statement which when executed, will insert an html
+element containing the input text."
   (cond ((string-match "^\s*<h1>\s*" text)
-         (concat "(insert \"<h1>" text "</h1>\n\")"))
+         (concat "(insert \"" text "</h1>\n\")"))
         ((string-match "^\s*<h2>\s*" text)
-         (concat "(insert \"<h2>" text "</h2>\n\")"))
+         (concat "(insert \"" text "</h2>\n\")"))
         (t
          (concat "(insert \"<p>" text "</p>\n\")"))))
 
@@ -109,13 +168,13 @@ Returns the url of the new image, relative to the project dir."
           (goto-char begin-section)
 
           (while parsing
-          
+
             ;; get next line
             (let ((line (bswebsite-get-line-at-point)))
 
               (cond
-               
-               ;; empty line
+
+               ;; empty line (end of paragraph)
                ((string-empty-p line)
                 (when (not (string-empty-p paragraph))
                   (push (bswebsite-make-insert-statement paragraph) body-statements))
@@ -129,7 +188,7 @@ Returns the url of the new image, relative to the project dir."
                       (end-sexp (progn (forward-sexp)
                                        (point))))
                   (push (buffer-substring-no-properties begin-sexp end-sexp) body-statements)))
-               
+
                ;; comment line
                ((string-match "^;" line)
                 (setf building-paragraph t)
@@ -151,39 +210,42 @@ Returns the url of the new image, relative to the project dir."
   (insert "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"/>\n"))
 
 (defun bswebsite-build-page (source-file)
-  (message "building page: %s" source-file)
-  (setf bswebsite-current-source-file source-file)
-  (let ((page-src (file-name-concat (bswebsite-src-dir) source-file))
-        (page-build (file-name-concat (bswebsite-build-dir)
-                                      (file-name-with-extension source-file "html")))
-        (section '())
-        (body-statements '()))
-  
-    ;; operate on file without switching buffer
-    (with-current-buffer (find-file-noselect page-src)
+   (bswebsite-report-append "building page: %s" source-file)
+   (setf bswebsite-current-source-file source-file)
+   (let ((page-src (file-name-concat (bswebsite-src-dir) source-file))
+         (page-build (file-name-concat (bswebsite-build-dir)
+                                       (file-name-with-extension source-file "html")))
+         (section '())
+         (body-statements '()))
 
-      ;; eval function definitions
-      (setf section (bswebsite-find-section "FUNCTIONS"))
-      (when section
-        (let ((begin-section (pop section))
-              (end-section (pop section)))
-          (eval-region begin-section end-section))))
+     ;; operate on file without switching buffer
+     (with-current-buffer (find-file-noselect page-src)
 
-    (setf body-statements (bswebsite-get-body-statements page-src))
+       ;; eval function definitions
+       (setf section (bswebsite-find-section "FUNCTIONS"))
+       (when section
+         (bswebsite-report-append "loading page functions")
+         (let ((begin-section (pop section))
+               (end-section (pop section)))
+           (eval-region begin-section end-section))))
 
-    ;; build the page
-    (make-empty-file page-build)
-    (with-temp-file page-build
-      (insert "<html>\n")
-      (insert "<head>\n")
-      (bswebsite-insert-head-contents)
-      (insert "</head>\n")
-      (insert "<body>\n")
-      (bswebsite-insert-page-header)
-      (while body-statements
-        (eval (car (read-from-string (pop body-statements)))))
-      (insert "</body>\n")
-      (insert "</html>\n"))))
+     (bswebsite-report-append "getting body statements")
+     (setf body-statements (bswebsite-get-body-statements page-src))
+
+     ;; build the page
+     (bswebsite-report-append "building page: %s" page-build)
+     (make-empty-file page-build)
+     (with-temp-file page-build
+       (insert "<html>\n")
+       (insert "<head>\n")
+       (bswebsite-insert-head-contents)
+       (insert "</head>\n")
+       (insert "<body>\n")
+       (bswebsite-insert-page-header)
+       (while body-statements
+         (eval (car (read-from-string (pop body-statements)))))
+       (insert "</body>\n")
+       (insert "</html>\n"))))
 
 (defun bswebsite-load-template (template-dir)
   (let ((template-file (file-name-concat template-dir "template.el")))
@@ -220,6 +282,9 @@ message."
   "project-dir is the path to the website project directory."
   (interactive "DWebsite project dir: ")
   (setf bswebsite-project-dir project-dir)
+  (bswebsite-report-init)
+  (bswebsite-errors-init)
+  (bswebsite-report-append (concat "PROJECT DIR: " bswebsite-project-dir))
   (let* ((src-dir (bswebsite-src-dir))
          (build-dir (bswebsite-build-dir))
          (src-resrc (file-name-concat src-dir "resrc"))
@@ -227,7 +292,7 @@ message."
          (setup-file (file-name-concat project-dir "setup.el"))
          (build-style (file-name-concat build-dir "style.css")))
 
-    (message "\nSTARTING WEBSITE BUILD AT %s" (current-time-string))
+    (bswebsite-report-append "STARTING WEBSITE BUILD AT %s" (current-time-string))
 
     (when (and (bswebsite-verify-dir "project dir" bswebsite-project-dir)
                (bswebsite-verify-dir "source dir" src-dir)
@@ -235,24 +300,30 @@ message."
                (bswebsite-verify-file "setup file" setup-file))
 
       ;; load setup first - setup script loads template
-      (message "loading setup")
+      (bswebsite-report-append "loading setup")
       (load-file setup-file)
 
       ;; delete build dir along with existing contents
       (when (file-exists-p build-dir)
-        (message "deleting existing build-dir")
+        (bswebsite-report-append "deleting existing build-dir")
         (delete-directory build-dir t))
-      (message "making new build dir at: %s" build-dir)
+      (bswebsite-report-append "making new build dir at: %s" build-dir)
       (make-directory build-dir)
       (make-directory build-resrc)
 
       ;; copy stylesheet, if it exists
       (if (file-exists-p bswebsite-stylesheet)
           (copy-file bswebsite-stylesheet build-style)
-        (message "ERROR, stylesheet does not exist: %s" bswebsite-stylesheet))
+        (bswebsite-report-append "ERROR, stylesheet does not exist: %s" bswebsite-stylesheet))
 
       ;; build pages (every file in src dir with .el extension)
       (let ((src-files (directory-files src-dir nil "^[0-9a-zA-Z\\-\\_]+\\.el$")))
         (while src-files
           (bswebsite-build-page (pop src-files)))))
-    (message "WEBSITE BUILD FINISHED\n")))
+    (bswebsite-report-append "WEBSITE BUILD FINISHED")
+    (if (not bswebsite-build-errors)
+        (bswebsite-report-append "\nNO ERRORS")
+      (progn
+        (bswebsite-report-append "\nERRORS:")
+        (dolist (err-msg (reverse bswebsite-build-errors))
+          (bswebsite-report-append err-msg))))))

@@ -6,16 +6,41 @@ template system can be used to add customisation.
 
 Integrates with bsarchive as content management system for images.
 
+* Features
+** Converts Plain Text into HTML Paragraphs
+** Simplified Markup for Headings
+** Automatic Image Processing (Resize/Create Thumbnail)
+** Flexible Template System
+** Build-Report Buffer
+
+* Dependencies
+- emacs version 29 or higher
+- bsarchive.el
+- sqlite
+- exiftool
+- imagemagick
+
 * Project Structure
+~setup.el~ is where basic setup is done such as website title and
+template. Also, some global variables such as default image sizes. A
+template may specify more definitions to be made in ~setup.el~. Please
+refer to the template's own documentation.
+
+The page content is defined in the ~src~ dir, where each page of the
+site is defined in an elisp file of it's own, so ~index.el~ contains
+the source for ~index.html~, etc.
+
+If a template is in use, it is generally stored in a directory called
+~templates~. You can put more than one template in there if you like,
+but can only specify one template at a time to be used in ~setup.el~.
+
+The ~build~ dir is where the output files go when the site is built
+using ~M-x bswebsite-build-site~.
+
 #+BEGIN_SRC text
 +website-project-directory
 |
 +--setup.el
-|
-+--+templates
-|  +--+basic-template
-|     +--template.el
-|     +--style.css
 |
 +--+src
 |  +--index.el
@@ -27,15 +52,83 @@ Integrates with bsarchive as content management system for images.
 |     +--image2.jpg
 |     +--image3.jpg
 |
++--+templates
+|  +--+basic-template
+|     +--template.el
+|     +--style.css
+|
 +--+build
 #+END_SRC
 
-* Dependencies
-- emacs version 29 or higher
-- bsarchive.el
-- sqlite
-- exiftool
-- imagemagick
+* Setup File
+Here is a very basic example of ~setup.el~.
+
+#+BEGIN_SRC elisp
+;;;;;;;;;;;;;;;;;;;; STANDARD BSWEBSITE VARIABLES ;;;;;;;;;;;;;;;;;;;;
+
+(setf bswebsite-title "My Website")
+
+(setf bswebsite-image-size-default 1000)
+
+(setf bswebsite-image-size-thumb 300)
+
+(setf bswebsite-archive-database-file "~/path/to/sqlite/database")
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;; TEMPLATE SETUP ;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(bswebsite-load-template "templates/basic-template")
+
+;; ... template may require additional setup - read the template's own documentation!
+
+#+END_SRC
+
+* Source Files
+Source files are written in elisp, but they are not quite executed
+like a normal elisp program.
+
+** BODY section
+
+Any text in between the line containing
+
+: BEGIN BODY
+
+and
+
+: END BODY
+
+Defines the content of the page's body element.
+
+Lines starting with an elisp function are executed and whatever is
+returned gets inserted.
+
+Comment lines are treated as text content and are converted
+automatically into html paragraphs.
+
+*** html heading element shortcuts
+
+** FUNCTIONS section
+
+Any text in between the line containing
+
+: BEGIN FUNCTIONS
+
+and
+
+: END FUNCTIONS
+
+will be executed as elisp before the page body is built, so you can
+use it to define any elisp functions which are specific to building
+that page.
+
+** text outside sections
+
+Anything not inside these sections is ignored by the parser - you can
+use it for comments or documentation if you wish.
+
+* Images
+** get images either by url or by archive UID
+
+** automatically resize images to default sizes
 
 * Jobs to Do
 ** strip exif data from images - insert author/copyright notice
